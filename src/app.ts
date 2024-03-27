@@ -1,20 +1,27 @@
 import mongoose from 'mongoose';
-import express from 'express';
-import path from 'path';
-import userRoutes from './routes/users';
-import cardRoutes from './routes/cards';
+import express, { Response, NextFunction } from 'express';
+import userRouter from './routes/users';
+import cardRouter from './routes/cards';
+import { IUserRequest } from './types';
 
 const { PORT = 3000 } = process.env;
 const app = express();
 
 mongoose.connect('mongodb://localhost:27017/mestodb');
 
+app.use((req: IUserRequest, res: Response, next: NextFunction) => {
+  req.user = {
+    _id: '6604337ddecca6a9a90fe64e',
+  };
+
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/users', userRoutes);
-app.use('/cards', cardRoutes);
-app.use(express.static(path.join(__dirname, 'public')));
+app.use('/users', userRouter);
+app.use('/cards', cardRouter);
 
 app.listen(PORT, () => {
   console.log(`App listening on port ${PORT}`);
