@@ -21,6 +21,8 @@
     "typescript": "^4.9.5"
   },
   "dependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.13.1",
+    "@typescript-eslint/parser": "^6.13.1",
     "express": "^4.18.2",
     "helmet": "^7.1.0",
     "mongoose": "^6.12.3"
