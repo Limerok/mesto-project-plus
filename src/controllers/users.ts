@@ -1,55 +1,90 @@
-import { Request, Response } from 'express';
-import { IUserRequest } from '../types';
+import { NextFunction, Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import User from '../models/user';
 import {
-  VALIDATION_ERROR,
-  NOT_FOUND,
   NOT_FOUND_ERROR_USER_MESSAGE,
   REQUEST_OK,
-  SERVER_ERROR,
-  SERVER_ERROR_MESSAGE,
   VALIDATION_ERROR_NAME,
   CREATED,
   CAST_ERROR_NAME,
 } from '../utils/constants';
+import { IUserRequest } from '../types';
+import NotFoundError from '../errors/not-found-err';
+import ValidationError from '../errors/validation-err';
+import UnauthorizedError from '../errors/unauthorized-err';
+import ConflictError from '../errors/conflict-err';
 
-export const getUsers = (req: Request, res: Response) => {
+export const getUsers = (req: Request, res: Response, next: NextFunction) => {
   User.find({})
     .then((users) => res.status(REQUEST_OK).send({ data: users }))
-    .catch(() => res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE }));
+    .catch((err) => next(err));
 };
 
-export const getUserById = (req: Request, res: Response) => {
+export const getUserById = (req: Request, res: Response, next: NextFunction) => {
   User.findById(req.params.userId)
-    .orFail(new Error(NOT_FOUND_ERROR_USER_MESSAGE))
+    .orFail(new NotFoundError(NOT_FOUND_ERROR_USER_MESSAGE))
     .then((user) => {
+      if (!user) {
+        throw (new NotFoundError(NOT_FOUND_ERROR_USER_MESSAGE));
+      }
       res.status(REQUEST_OK).send({ data: user });
     })
-    .catch((err: Error) => {
+    .catch((err) => {
       if (err.message === NOT_FOUND_ERROR_USER_MESSAGE) {
-        res.status(NOT_FOUND).send({ message: NOT_FOUND_ERROR_USER_MESSAGE });
-      } else if (err.name === CAST_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные при поиске пользователя' });
+        next(err);
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные для поиска пользователя'));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
 
-export const createUser = (req: Request, res: Response) => {
-  const { name, about, avatar } = req.body;
-  User.create({ name, about, avatar })
-    .then((user) => res.status(CREATED).send({ data: user }))
-    .catch((err: Error) => {
-      if (err.name === VALIDATION_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные при создании пользователя' });
+export const createUser = (req: Request, res: Response, next: NextFunction) => {
+  const {
+    password,
+    email,
+    name,
+    about,
+    avatar,
+  } = req.body;
+  return bcrypt.hash(password, 10)
+    .then((hash) => User.create({
+      email,
+      password: hash,
+      name,
+      about,
+      avatar,
+    }))
+    .then((user) => {
+      const {
+        _id,
+        email,
+        name,
+        about,
+        avatar,
+      } = user;
+      res.status(CREATED).send({
+        _id,
+        email,
+        name,
+        about,
+        avatar,
+      });
+    })
+    .catch((err) => {
+      if (err.code === 11000) {
+        next((new ConflictError('Пользователь с таким email уже существует')));
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные при создании пользователя'));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
 
-export const updateProfile = (req: IUserRequest, res: Response) => {
+export const updateProfile = (req: IUserRequest, res: Response, next: NextFunction) => {
   const { name, about } = req.body;
   User.findByIdAndUpdate(
     req.user?._id,
@@ -57,25 +92,25 @@ export const updateProfile = (req: IUserRequest, res: Response) => {
     {
       new: true,
       runValidators: true,
-      upsert: false,
+      upsert: true,
     },
   )
-    .orFail(new Error(NOT_FOUND_ERROR_USER_MESSAGE))
+    .orFail(new NotFoundError(NOT_FOUND_ERROR_USER_MESSAGE))
     .then((user) => {
       res.status(REQUEST_OK).send({ data: user });
     })
     .catch((err) => {
       if (err.message === NOT_FOUND_ERROR_USER_MESSAGE) {
-        res.status(NOT_FOUND).send({ message: NOT_FOUND_ERROR_USER_MESSAGE });
-      } else if (err.name === VALIDATION_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные при обновлении пользователя' });
+        next(err);
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные при обновлении профиля'));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
 
-export const updateProfileAvatar = (req: IUserRequest, res: Response) => {
+export const updateProfileAvatar = (req: IUserRequest, res: Response, next: NextFunction) => {
   const { avatar } = req.body;
   User.findByIdAndUpdate(
     req.user?._id,
@@ -83,7 +118,7 @@ export const updateProfileAvatar = (req: IUserRequest, res: Response) => {
     {
       new: true,
       runValidators: true,
-      upsert: false,
+      upsert: true,
     },
   )
     .orFail(new Error(NOT_FOUND_ERROR_USER_MESSAGE))
@@ -92,11 +127,42 @@ export const updateProfileAvatar = (req: IUserRequest, res: Response) => {
     })
     .catch((err) => {
       if (err.message === NOT_FOUND_ERROR_USER_MESSAGE) {
-        res.status(NOT_FOUND).send({ message: NOT_FOUND_ERROR_USER_MESSAGE });
-      } else if (err.name === VALIDATION_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные при обновлении аватара' });
+        next(err);
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные при обновлении аватара'));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
+      }
+    });
+};
+
+export const login = (req: Request, res: Response, next: NextFunction) => {
+  const { email, password } = req.body;
+
+  return User.findUserByCredentials(email, password)
+    .then((user) => {
+      res.send({
+        token: jwt.sign({ _id: user._id }, 'super-strong-secret', { expiresIn: '7d' }),
+      });
+    })
+    .catch(() => {
+      next((new UnauthorizedError('Передан неверный логин или пароль')));
+    });
+};
+
+export const getUser = (req: IUserRequest, res: Response, next: NextFunction) => {
+  User.findById(req.user?._id)
+    .orFail(new Error(NOT_FOUND_ERROR_USER_MESSAGE))
+    .then((user) => {
+      res.status(REQUEST_OK).send({ data: user });
+    })
+    .catch((err: Error) => {
+      if (err.message === NOT_FOUND_ERROR_USER_MESSAGE) {
+        next(err);
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные при поиске пользователя'));
+      } else {
+        next(err);
       }
     });
 };

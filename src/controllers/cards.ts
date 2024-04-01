@@ -1,92 +1,98 @@
-import { Request, Response } from 'express';
-import { IUserRequest } from '../types';
+import { NextFunction, Request, Response } from 'express';
+import ValidationError from '../errors/validation-err';
+import NotFoundError from '../errors/not-found-err';
 import Card from '../models/card';
 import {
-  VALIDATION_ERROR,
-  NOT_FOUND,
   REQUEST_OK,
-  SERVER_ERROR,
-  SERVER_ERROR_MESSAGE,
   VALIDATION_ERROR_NAME,
   NOT_FOUND_ERROR_CARD_MESSAGE,
   CREATED,
   CAST_ERROR_NAME,
 } from '../utils/constants';
+import { IUserRequest } from '../types';
+import ForbiddenError from '../errors/forbidden-err';
 
-export const getCards = (req: Request, res: Response) => {
+export const getCards = (req: Request, res: Response, next: NextFunction) => {
   Card.find({})
     .then((cards) => res.status(REQUEST_OK).send({ data: cards }))
-    .catch(() => res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE }));
+    .catch((err) => next(err));
 };
 
-export const deleteCardById = (req: Request, res: Response) => {
-  Card.findByIdAndRemove(req.params.cardId)
-    .orFail(new Error(NOT_FOUND_ERROR_CARD_MESSAGE))
+export const deleteCardById = (req: IUserRequest, res: Response, next: NextFunction) => {
+  Card.findById(req.params.cardId)
+    .orFail(new NotFoundError(NOT_FOUND_ERROR_CARD_MESSAGE))
     .then((card) => {
-      res.status(REQUEST_OK).send({ data: card });
+      if (String(card.owner) !== req.user?._id) {
+        throw new ForbiddenError('Нет доступа для удаления карточки');
+      }
+      return card;
     })
+    .then((card) => Card.findByIdAndDelete(card))
+    .then((card) => res.status(REQUEST_OK).send({ data: card }))
     .catch((err) => {
-      if (err.name === CAST_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные при удалении карточки.' });
+      if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные при удалении карточки.'));
       } else if (err.message === NOT_FOUND_ERROR_CARD_MESSAGE) {
-        res.status(NOT_FOUND).send({ message: NOT_FOUND_ERROR_CARD_MESSAGE });
+        next(err);
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
 
-export const createCard = (req: IUserRequest, res: Response) => {
+export const createCard = (req: IUserRequest, res: Response, next: NextFunction) => {
   const { name, link } = req.body;
   Card.create({ name, link, owner: req.user?._id })
     .then((card) => res.status(CREATED).send({ data: card }))
     .catch((err) => {
-      if (err.name === VALIDATION_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные при создании карточки.' });
+      if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные при создании карточки.'));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
 
-export const likeCard = (req: IUserRequest, res: Response) => {
+export const likeCard = (req: Request, res: Response, next: NextFunction) => {
+  const { userId } = req.body;
   Card.findByIdAndUpdate(
     req.params.cardId,
-    { $addToSet: { likes: req.user?._id } },
+    { $addToSet: { likes: userId } },
     { new: true },
   )
-    .orFail(new Error(NOT_FOUND_ERROR_CARD_MESSAGE))
+    .orFail(new NotFoundError(NOT_FOUND_ERROR_CARD_MESSAGE))
     .then((card) => {
       res.status(REQUEST_OK).send({ data: card });
     })
     .catch((err) => {
       if (err.message === NOT_FOUND_ERROR_CARD_MESSAGE) {
-        res.status(NOT_FOUND).send({ message: NOT_FOUND_ERROR_CARD_MESSAGE });
-      } else if (err.name === CAST_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные для постановки лайка.' });
+        next(err);
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError('Переданы некорректные данные для постановки лайка'));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
 
-export const dislikeCard = (req: IUserRequest, res: Response) => {
+export const dislikeCard = (req: Request, res: Response, next: NextFunction) => {
+  const { userId } = req.body;
   Card.findByIdAndUpdate(
     req.params.cardId,
-    { $pull: { likes: req.user?._id } },
+    { $pull: { likes: userId } },
     { new: true },
   )
-    .orFail(new Error(NOT_FOUND_ERROR_CARD_MESSAGE))
+    .orFail(new NotFoundError(NOT_FOUND_ERROR_CARD_MESSAGE))
     .then((card) => {
       res.status(REQUEST_OK).send({ data: card });
     })
     .catch((err) => {
       if (err.message === NOT_FOUND_ERROR_CARD_MESSAGE) {
-        res.status(NOT_FOUND).send({ message: NOT_FOUND_ERROR_CARD_MESSAGE });
-      } else if (err.name === CAST_ERROR_NAME) {
-        res.status(VALIDATION_ERROR).send({ message: 'Переданы некорректные данные для снятия лайка.' });
+        next(err);
+      } else if (err.name === VALIDATION_ERROR_NAME || err.name === CAST_ERROR_NAME) {
+        next(new ValidationError(''));
       } else {
-        res.status(SERVER_ERROR).send({ message: SERVER_ERROR_MESSAGE });
+        next(err);
       }
     });
 };
