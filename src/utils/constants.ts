@@ -10,6 +10,6 @@ export const CREATED = 201;
 export const VALIDATION_ERROR_NAME = 'ValidationError';
 export const CAST_ERROR_NAME = 'CastError';
 
-export const SERVER_ERROR_MESSAGE = 'Ошибка по умолчанию';
+export const SERVER_ERROR_MESSAGE = 'На сервере произошла ошибка';
 export const NOT_FOUND_ERROR_CARD_MESSAGE = 'Передан несуществующий _id карточки.';
 export const NOT_FOUND_ERROR_USER_MESSAGE = 'Пользователь по указанному _id не найден';
